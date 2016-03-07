@@ -1,25 +1,127 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "PA1_template"
+output: html_document
 ---
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the "quantified self" movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
 
 
-## Loading and preprocessing the data
+Source of Data: https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip
+
+The variables included in this dataset are:
+
+    steps: Number of steps taking in a 5-minute interval (missing values are coded as NA)
+    date: The date on which the measurement was taken in YYYY-MM-DD format
+    interval: Identifier for the 5-minute interval in which measurement was taken
+
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset.
 
 
+LOADING AND PREPROCESSING DATA
 
-## What is mean total number of steps taken per day?
+```{r}
+# Load the data (i.e. read.csv())
+library(dplyr)
+library(lattice)
+activity <- read.csv("activity.csv")
+activity$date <- as.POSIXct(strptime(as.character(activity$date), "%Y-%m-%d"))
+
+#Process/transform the data (if necessary) into a format suitable for your analysis
+activitydone <- filter(activity, !(is.na(activity$steps)))
+
+# Note that there are also NA's on date that need to be cleaned
+activitydone <- filter(activitydone, (!is.na(activitydone$date)))
+dailydone <- group_by(activitydone, date)
+
+##WHAT IS MEAN TOTAL NUMBER OF STEPS TAKEN PER DAY
 
 
+# Calculate the total number of steps taken per day
+dailysum <- summarise (dailydone, Sum=sum(steps))
 
-## What is the average daily activity pattern?
+# Histogram of the total number of steps taken each day
+colfunc<-colorRampPalette(c("yellow","red"))
+nbreaks <- 13
+
+hist(dailysum$Sum, breaks=nbreaks, main = "Total Number of Steps / Day- NA's Excluded",xlab = "Number of Steps/day", ylab = "Frequency", col = colfunc(nbreaks), ylim = c(0,30))
+
+#Calculate and report the mean and median of the total number of steps taken per day
+dailymean <- summarise(dailydone, Mean=mean(steps), Median=median(steps))
+print.data.frame(dailymean)
+
+## WHAT IS THE AVERAGE DAILY ACTIVITY PATERN
+
+# Devise a strategy for filling in all of the missing values in the dataset.
+
+# Time series plot of the average number of steps taken
+plot(dailymean$date, dailymean$Mean, type="l", main= "Average Number of Steps Taken", xlab = "Day", ylab = "average steps", col="blue", lwd=2)
+
+#The 5-minute interval that, on average, contains the maximum number of step
+intervaldone <- group_by(activitydone, interval)
+intervalmean <- summarise(intervaldone, Mean=mean(steps))
+maxinterval <- intervalmean$interval[(which.max(intervalmean$Mean)+1)]
+
+plot(intervalmean$interval, intervalmean$Mean, type="l", xlab="5min Interval (Cumulative)", ylab="Average Steps", main = "5min Interval Average Number of Steps", col="blue")
+abline(v=maxinterval, col="red", lty=2, lwd=2)
+
+#Explicits the 5min interval with maximum average number of steps
+print(paste("5min interval with maximum average steps in the series is: ", maxinterval))
+
+## INPUTING MISSING VALUES
+
+#Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+NAcount <-apply(activity, 2, is.na)
+NAtotal <- sum(NAcount)
+
+print(paste("Number of NA entries: ", NAtotal))
+```
+
+Strategy for filling all missing values in the dataset:
+
+1 - Create a global average for each 5 min interval use the value to replace NA's
+
+2 - Calculate global average to input in days where no measures are taken
+
+```{r}
+#Create a fillNAmatrix with an average for each each interval
+avginterval <- group_by(activity, interval)
+fillNAmatrix <- summarise(avginterval, Mean=mean(steps, na.rm = TRUE))
+
+#Create a new dataset with a new variable mean and then match the NAs with the corresponding mean
+activitymean <- mutate(activity, Mean = fillNAmatrix$Mean[match(activity$interval, fillNAmatrix$interval)])
+activitymean$steps[is.na(activitymean$steps)] <- activitymean$Mean[is.na(activitymean$steps)]
+
+#Clean up NA's from date
+activitymean <- filter(activitymean, (!is.na(activitymean$date)))
+
+#with this filled dataset, compute the new sum
+dailyfill <- group_by(activitymean, date)
+dailyfillsum <- summarise (dailyfill, Sum=sum(steps))
+
+# Plot corrected histogram
+hist(dailyfillsum$Sum, breaks=nbreaks, main = "Total Number of Steps / Day - NA's replaced by Avg Intervals",xlab = "Number of Steps/day", ylab = "Frequency", col = colfunc(nbreaks), ylim = c(0,30))
 
 
+#Report mean and median total number of steps taken per day
+dailyfillmean <- summarise(dailyfill, Mean=mean(steps), Median=median(steps))
 
-## Imputing missing values
+print.data.frame(dailyfillmean)
+```
 
+Are there differences in activity patterns between weekdays and weekends?
 
+```{r}
+#Create the new variable and transform to factor
+activitycomplete <- mutate(activitymean, type_of_day = ifelse((weekdays(strptime(activitymean$date, "%Y-%m-%d"))) %in% c("Saturday", "Sunday"), "weekend", "weekday"))
+activitycomplete$type_of_day <- as.factor(activitycomplete$type_of_day)
 
-## Are there differences in activity patterns between weekdays and weekends?
+#Create matrix grouped by 5min interval and type of day
+weekinterval <- group_by(activitycomplete, interval, type_of_day)
+weekmeaninterval <- summarise(weekinterval, Mean=mean(steps))
+
+#Plot graphic comparison
+p <- xyplot(Mean~interval|type_of_day, weekmeaninterval, type=c("l"), col=c("blue"), main="Weekday vs Weekend Behavior")
+print(p)
+```
+
